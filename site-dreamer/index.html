@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>We reproduced Dreamer 4 on CoinRun — and open-sourced the recipe · Vizuara</title>
+<meta name="description" content="A world model trained from scratch on self-generated data: tokenizer PSNR 40.41, FVD 32.19, 144-frame rollouts with no collapse. One GPU, ~$150, every number and every failure documented."/>
+<meta property="og:title" content="We reproduced Dreamer 4 on CoinRun — and open-sourced the recipe"/>
+<meta property="og:image" content="/announce/og.png"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta property="og:description" content="Tokenizer PSNR 40.41 (beats the published Genie numbers). FVD 32.19. 144-frame rollouts, no collapse. One GPU, ~$150."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#F0EEE6; --cream-2:#E8E5DA; --clay:#C15F3C; --clay-soft:#D98C6A;
+  --ink:#1A1A1A; --slate:#5A6472; --muted:#6B6B63; --line:#DCD8CC;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--cream);color:var(--ink);
+  font-family:Inter,ui-sans-serif,-apple-system,sans-serif;line-height:1.65;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;font-weight:600;letter-spacing:-.02em;line-height:1.12}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+
+/* hero */
+.hero{padding:88px 0 56px;text-align:center}
+.eyebrow{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--clay);font-weight:600;margin-bottom:22px}
+h1{font-size:clamp(34px,5.6vw,62px);margin:0 0 20px}
+h1 em{font-style:italic;color:var(--clay)}
+.lede{font-size:19px;color:var(--muted);max-width:660px;margin:0 auto 34px}
+.lede b{color:var(--ink);font-weight:600}
+.stats{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:36px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 22px;min-width:150px}
+.stat .v{font-family:Fraunces,serif;font-size:29px;font-weight:600;color:var(--clay);line-height:1}
+.stat .k{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+
+/* sections */
+section{padding:60px 0;border-top:1px solid var(--line)}
+h2{font-size:clamp(26px,3.6vw,38px);margin:0 0 14px}
+.sub{color:var(--muted);max-width:720px;margin:0 0 34px;font-size:16.5px}
+figure{margin:34px 0}
+figure img{width:100%;border:1px solid var(--line);border-radius:14px;display:block;background:#fff}
+figcaption{font-size:13.5px;color:var(--muted);margin-top:12px;text-align:center}
+
+/* gallery */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:14px}
+.cell{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#000;aspect-ratio:1}
+.cell video{width:100%;height:100%;object-fit:cover;display:block;image-rendering:pixelated}
+.cell .tag{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.62);color:#fff;
+  font-size:10px;letter-spacing:.09em;padding:3px 8px;border-radius:20px;font-family:'JetBrains Mono',monospace}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:15px;margin:22px 0}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line)}
+th{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600}
+td.num{font-family:'JetBrains Mono',monospace;color:var(--clay);font-weight:500}
+tr.win td{background:#fff}
+
+/* cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:24px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px}
+.card h3{font-size:17px;margin:0 0 8px}
+.card p{font-size:14.5px;color:var(--muted);margin:0}
+.card .n{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--clay);letter-spacing:.1em}
+
+/* steps */
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:26px 0}
+ol.steps li{counter-increment:s;position:relative;padding:0 0 22px 52px;border-left:1px solid var(--line);margin-left:14px}
+ol.steps li:last-child{border-left:0}
+ol.steps li::before{content:counter(s);position:absolute;left:-15px;top:0;width:30px;height:30px;border-radius:50%;
+  background:var(--clay);color:#fff;display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:12px}
+ol.steps h3{font-size:17px;margin:2px 0 6px}
+ol.steps p{font-size:14.5px;color:var(--muted);margin:0}
+
+.note{background:#fff;border:1px solid var(--line);border-left:3px solid var(--clay);
+  border-radius:12px;padding:20px 24px;margin:26px 0}
+.note b{color:var(--clay)}
+pre{background:#1A1A1A;color:#E8E5DA;padding:18px 20px;border-radius:12px;overflow-x:auto;
+  font-size:13px;line-height:1.7}
+footer{padding:56px 0 80px;border-top:1px solid var(--line);color:var(--muted);font-size:14px;text-align:center}
+a{color:var(--clay)}
+.pill{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:20px;
+  padding:5px 13px;font-size:12.5px;margin:4px 6px 0 0;color:var(--muted)}
+
+/* nav */
+nav.top{position:sticky;top:0;z-index:50;background:rgba(240,238,230,.88);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line)}
+nav.top .inner{max-width:1080px;margin:0 auto;padding:11px 24px;display:flex;align-items:center;gap:22px}
+nav.top .brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;text-decoration:none;color:var(--ink)}
+nav.top .brand img{width:24px;height:24px;border-radius:5px}
+nav.top .links{margin-left:auto;display:flex;gap:20px}
+nav.top .links a{font-size:13.5px;color:var(--muted);text-decoration:none}
+nav.top .links a:hover{color:var(--clay)}
+@media(max-width:720px){nav.top .links{display:none}}
+
+/* byline + resource buttons */
+.byline{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 26px;color:var(--muted);font-size:14.5px}
+.byline img{width:26px;height:26px;border-radius:6px}
+.reslinks{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:26px 0 0}
+.reslinks a{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);
+  border-radius:10px;padding:9px 16px;font-size:14px;text-decoration:none;color:var(--ink);transition:.15s}
+.reslinks a:hover{border-color:var(--clay);color:var(--clay)}
+
+/* article prose column */
+.prose{max-width:760px;margin:0 auto}
+.prose p{font-size:17px;line-height:1.75;color:#2C2C2C;margin:0 0 20px}
+.prose p.first::first-letter{font-family:Fraunces,serif;font-size:56px;float:left;line-height:.86;
+  padding:6px 10px 0 0;color:var(--clay)}
+.prose h3{font-size:22px;margin:40px 0 12px}
+.prose h4{font-family:Inter,sans-serif;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--clay);margin:36px 0 10px;font-weight:600}
+.prose ul{font-size:16.5px;line-height:1.7;color:#2C2C2C;padding-left:22px}
+.prose li{margin-bottom:9px}
+.prose blockquote{border-left:3px solid var(--clay);margin:26px 0;padding:4px 0 4px 20px;
+  font-family:Fraunces,serif;font-size:19px;font-style:italic;color:var(--ink)}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:13px;background:var(--cream-2);
+  border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.toc{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 26px;margin:0 0 40px}
+.toc h4{margin:0 0 12px}
+.toc ol{margin:0;padding-left:20px;font-size:15px;line-height:1.9;color:var(--muted)}
+.toc a{text-decoration:none}
+figure.wide{max-width:1080px;margin-left:calc((760px - 1080px)/2)}
+@media(max-width:1120px){figure.wide{max-width:100%;margin-left:0}}
+
+</style>
+</head>
+<body>
+<nav class="top"><div class="inner">
+  <a class="brand" href="#top"><img src="assets/vizuara-logo.png" alt="Vizuara"/> Vizuara AI Labs</a>
+  <div class="links">
+    <a href="#dreams">Dreams</a><a href="#article">The build</a><a href="#results">Results</a>
+    <a href="#honest">Limits</a><a href="#credits">Credits</a><a href="#get">Reproduce</a>
+  </div>
+</div></nav>
+
+<div class="wrap">
+  <div class="hero">
+    <div id="top" class="eyebrow">Vizuara AI Labs · World Models</div>
+    <h1>We reproduced <em>Dreamer 4</em><br/>on CoinRun</h1>
+    <p class="lede">A world model trained <b>entirely from scratch</b> on data we generated ourselves —
+      then we open-sourced the whole recipe, including the five things we had to fix to make it work.</p>
+    <div class="byline"><img src="assets/vizuara-logo.png" alt=""/> <span>Vizuara AI Labs</span></div>
+    <div class="reslinks">
+      <a href="#article">📖 Read the build</a>
+      <a href="#dreams">🎬 Watch the dreams</a>
+      <a href="#get">⚙️ Reproduce it</a>
+      <a href="#bibtex">❝ Cite</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v">40.41</div><div class="k">Tokenizer PSNR</div></div>
+      <div class="stat"><div class="v">32.19</div><div class="k">End-to-end FVD</div></div>
+      <div class="stat"><div class="v">144</div><div class="k">Frames, no collapse</div></div>
+      <div class="stat"><div class="v">~$150</div><div class="k">One GPU</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+<section id="dreams">
+  <h2>The model dreaming</h2>
+  <p class="sub">Every clip below is <b>generated frame by frame by the neural network</b> — no game engine.
+    Each one is given just <b>4 real frames</b> of context, then hallucinates the next <b>144 frames</b> on its own.
+    Notice it keeps each level's art style — night ice, desert, pastel — and never dissolves.</p>
+  <div class="grid" id="gallery"></div>
+  <p class="sub" style="margin-top:22px">These are unedited samples from the held-out <b>test</b> split — levels the model never trained on.</p>
+</section>
+
+
+<section id="article">
+  <div class="prose">
+    <h2>How we built it</h2>
+    <p class="sub">The long version — every design decision, every number, and every thing that broke.
+      Roughly a fifteen-minute read.</p>
+
+    <div class="toc">
+      <h4>Contents</h4>
+      <ol>
+        <li><a href="#a1">What a world model actually is</a></li>
+        <li><a href="#a2">Attempt one, and why it failed</a></li>
+        <li><a href="#a3">Choosing Dreamer 4</a></li>
+        <li><a href="#a4">The data engine</a></li>
+        <li><a href="#a5">Stage one — the tokenizer</a></li>
+        <li><a href="#a6">Stage two — dynamics and shortcut forcing</a></li>
+        <li><a href="#a7">Five things that broke</a></li>
+        <li><a href="#a8">Measuring it honestly</a></li>
+      </ol>
+    </div>
+
+    <h3 id="a1">1 · What a world model actually is</h3>
+    <p class="first">A world model is a neural network that has learned to be a game engine. You give it
+      the current frame and a button press; it gives you the next frame. Do that repeatedly — feeding
+      each prediction back in as the new input — and you get a video you can steer. There is no physics
+      code, no collision detection, no sprite sheet. Every pixel is a prediction.</p>
+    <p>The technical name for running the model forward like this is a <b>rollout</b>, and it is where
+      the difficulty lives. One-step prediction is easy: the model always sees a real frame as context
+      during training. In a rollout it sees <i>its own output</i>, which contains small errors, which
+      push it slightly off the distribution it was trained on, where its predictions get slightly worse.
+      That feedback loop is called compounding error, and it is the standard way world models fail — not
+      with a crash, but by slowly dissolving into mush.</p>
+    <figure><img src="figures/fig6_rollout_drift.png" alt="Compounding error in autoregressive rollouts"/>
+      <figcaption>Fig 1 — Four real frames of context, then 144 frames where the model feeds on itself.
+        Coherence at the end is the real test, not one-step accuracy.</figcaption></figure>
+
+    <figure><img src="figures/fig1_architecture.png" alt="World model architecture: tokenizer, dynamics, decoder"/>
+<figcaption><b>Figure 1.</b> The three parts of a world model. A tokenizer compresses each frame into
+32 continuous latents, an action-conditioned transformer predicts the next set given what you pressed,
+and the decoder turns them back into pixels. The loop is what makes it a simulator, not a video model.</figcaption></figure>
+<h3 id="a2">2 · Attempt one, and why it failed</h3>
+    <p>Our first world model followed <a href="https://arxiv.org/abs/2402.15391">Genie</a> (DeepMind, 2024),
+      built on the open <a href="https://github.com/insait-institute/GenieRedux">GenieRedux</a>
+      reimplementation. It trained. It produced things that looked vaguely like a platformer. It was
+      also close to unusable, for two reasons that turned out to be structural rather than bad luck.</p>
+    <p><b>The controls did nothing.</b> Genie's headline idea is that it learns its action vocabulary
+      <i>without labels</i> — it watches unlabelled video and infers a small set of discrete actions.
+      That is elegant, and it is what lets Genie train on internet video. But at our scale the model
+      simply learned to ignore the action channel. We measured this with ΔPSNR — generate once with the
+      true action, once with a different action, and see how much the futures differ. We got
+      <b>approximately zero</b>. Pressing a key changed nothing.</p>
+    <p><b>It ran at about one frame per second.</b> Genie's dynamics model is MaskGIT, which fills in a
+      frame's tokens over roughly 25 refinement passes. Twenty-five forward passes per frame is not a
+      tuning problem you can optimise away; getting to real time would have been a separate research
+      project in distillation.</p>
+    <blockquote>Two structural problems, not two bugs. That is what sent us looking for a different method.</blockquote>
+
+    <h3 id="a3">3 · Choosing Dreamer 4</h3>
+    <p>We switched to <a href="https://arxiv.org/abs/2509.24527">Dreamer 4</a> (Hafner, Yan &amp; Lillicrap,
+      2025), using the <a href="https://github.com/next-state/open-dreamer">Open Dreamer</a> JAX
+      implementation by Diego Marti Monso, Francesco Sacco and Edward Hu. It differs from Genie at
+      essentially every layer, and each difference maps onto one of our problems.</p>
+    <figure><img src="figures/fig2_genie_vs_dreamer.png" alt="Genie versus Dreamer 4"/>
+      <figcaption>Fig 2 — Discrete codes and guessed actions, versus continuous latents and real actions.</figcaption></figure>
+    <p><b>Continuous latents instead of discrete codes.</b> Genie's tokenizer is a VQ-VAE: each frame
+      becomes a grid of integers drawn from a codebook of 1,024. Dreamer 4's tokenizer has no codebook at
+      all — it is a masked autoencoder that projects to a low-dimensional bottleneck and squeezes it
+      through a <span class="kbd">tanh</span>. Nothing is quantised, so nothing is lost to rounding.</p>
+    <p><b>Real actions instead of inferred ones.</b> The dynamics model takes the actual action as an
+      input embedding. This sounds like a step backwards — it means you need action-labelled data,
+      which is exactly what Genie was designed to avoid. But we <i>generate</i> our own data, so we know
+      every action for free. Giving up Genie's core advantage cost us nothing and bought us control.</p>
+    <p><b>Flow matching with shortcut forcing instead of MaskGIT.</b> This is the one that solves speed,
+      and it deserves its own section.</p>
+
+    <h3 id="a4">4 · The data engine</h3>
+    <p>Our first dataset was 122,000 frames. The recipe we were now following assumes roughly ten
+      million. We had been training on about one percent of the intended data — which, in hindsight,
+      explains more of attempt one's weakness than the architecture did.</p>
+    <figure><img src="figures/fig3_data_engine.png" alt="Data generation pipeline"/>
+      <figcaption>Fig 3 — procgen rollouts to ArrayRecord shards. Every frame is ours; nothing is scraped.</figcaption></figure>
+    <p>We rebuilt it around <a href="https://github.com/openai/procgen">OpenAI's procgen</a> CoinRun
+      (MIT licensed), fanned out across many CPU containers on Modal. Ten thousand episodes survived the
+      length filter out of about 31,000 attempted, chunked into 160-frame records:
+      <b>9,600,000 training frames</b>, plus 480,000 each for validation and test. Every record carries
+      the frames, the action taken at each step, and the reward.</p>
+    <p>Two details matter more than they look. First, <b>we generate rather than scrape</b> — there is no
+      copyright question anywhere in this project, and we get perfect action labels as a side effect.
+      Second, the loader does <b>reward-biased sampling</b>: half the training windows are deliberately
+      chosen to contain a moment where the agent reached a coin. Without that, most random 64-frame
+      windows of a random policy are just aimless wandering.</p>
+
+    <h3 id="a5">5 · Stage one — the tokenizer</h3>
+    <p>The tokenizer is trained first and then frozen. Its only job is to compress a frame into latents
+      and reconstruct it faithfully. Everything downstream inherits its ceiling: the dynamics model can
+      never produce a sharper frame than the tokenizer can decode.</p>
+    <p>The one real judgement call here was <b>how many latents per frame</b>. Open Dreamer's default is
+      512, but that number is sized for Minecraft at 360×640, which is about 920 patches per frame.
+      CoinRun at 64×64 with patch size 8 has only <b>64 patches</b>. Using 512 latents would have been an
+      eightfold <i>expansion</i> rather than a compression, and would have inflated the dynamics model
+      too, since its token count scales with the number of latents. We used <b>32</b> — a 24× compression,
+      and divisible by the dynamics model's packing factor of 2.</p>
+    <figure><img src="figures/chart_psnr.png" alt="Tokenizer PSNR versus published baselines"/>
+      <figcaption>Fig 4 — Measured reconstruction quality. 10,000 steps, 1×H100, 95 minutes, about $6.</figcaption></figure>
+    <p>It reached <b>PSNR 40.41</b>, with LPIPS at 0.0015 — perceptually near-lossless. For reference,
+      GenieRedux reports 38.25 on CoinRun and the Genie paper reports 35.7. Those are not perfectly
+      like-for-like comparisons, but it is comfortably in the right range, and the reconstructions show
+      crisp platforms, sprites and distinct level art styles.</p>
+
+    <h3 id="a6">6 · Stage two — dynamics and shortcut forcing</h3>
+    <p>The dynamics model is the world model proper: a block-causal transformer that takes the latents of
+      past frames plus the action, and predicts the next frame's latents. Ours is about 1.57 billion
+      parameters.</p>
+    <p>It is trained with <b>flow matching</b> — instead of classifying discrete tokens, it learns a
+      velocity field that transports noise into data. Sampling normally means integrating that field in
+      many small steps, which is slow. <a href="https://arxiv.org/abs/2410.12557">Shortcut models</a>
+      (Frans, Hafner, Levine &amp; Abbeel) fix this by conditioning the network on the <i>step size</i> as
+      well as the noise level, and training a self-consistency rule:</p>
+    <blockquote>One step of size 2d must land where two steps of size d land.</blockquote>
+    <figure><img src="figures/fig5_shortcut.png" alt="Shortcut models: many small steps versus few large steps"/>
+      <figcaption>Fig 5 — Same path, far fewer steps. This is what makes real-time generation possible.</figcaption></figure>
+    <p>The consequence is that few-step generation is learned <b>inside the same training run</b>. There is
+      no separate distillation phase, which is precisely the project we would have had to undertake with
+      Genie. The schedule is two-phase: pure flow matching first, so the model learns the field, then the
+      bootstrap objective is switched on so it learns to take big jumps along it.</p>
+    <figure><img src="figures/chart_training.png" alt="Measured training losses across both phases"/>
+      <figcaption>Fig 6 — Our actual logged losses. <span class="kbd">boot_mse</span> is exactly zero
+        until step 40,000, then appears and falls as the shortcut objective engages.</figcaption></figure>
+    <p>We ran 80,000 steps with the switch at 40,000. That is a rescaling of the published 200k/100k
+      schedule, and it was forced by a hard constraint: Modal caps a single job at 24 hours, and we
+      measured about 1.05 iterations per second. At 200,000 steps we would have hit the wall at roughly
+      step 90,000 — <i>before ever reaching the bootstrap phase</i>, and therefore without the one
+      capability we changed architectures to get. Halving the schedule preserved the phase structure
+      within the budget.</p>
+
+    <figure><img src="figures/fig4_two_phase.png" alt="Two-phase training schedule"/>
+<figcaption><b>Figure 6.</b> The two-phase schedule. For the first 40,000 steps the model learns only
+the flow field. After <code>bootstrap_start</code> it also learns to take big steps — that second
+phase is what buys few-step, real-time-capable generation.</figcaption></figure>
+<h3 id="a7">7 · Five things that broke</h3>
+    <p>Open Dreamer's write-up describes CoinRun as its single-GPU starting point. In practice that path
+      does not run end to end as shipped. We hit five distinct breakages, all found by reading source
+      rather than guessing:</p>
+    <ul>
+      <li><b>Their CoinRun generator crashes.</b> It passes <span class="kbd">serialization_format="pickle"</span>
+        to a <span class="kbd">ShardWriter</span> whose constructor takes no such argument.</li>
+      <li><b>Writer and reader disagree.</b> That writer emits msgpack; the CoinRun reader calls
+        <span class="kbd">pickle.loads</span>. The pickle path was lost in a refactor. We wrote records in
+        the schema the reader actually parses.</li>
+      <li><b>No CoinRun tokenization script.</b> Theirs hardcodes the Minecraft transform. We routed around
+        it — the dynamics trainer supports raw video and encodes on the fly.</li>
+      <li><b>The dynamics trainer asserts the Minecraft action space.</b> CoinRun is 0 binary / 16
+        categorical, so it fails immediately. The model itself is generic; the assert was a stale guard.</li>
+      <li><b>The evaluation script cannot write its own videos.</b> It calls imageio's
+        <span class="kbd">pyav</span> plugin, which their dependencies do not include.</li>
+    </ul>
+    <p>Alongside those, the infrastructure produced its own lessons. The one worth repeating: putting
+      <span class="kbd">jax[cuda12]</span> on an <span class="kbd">nvidia/cuda</span> base image makes JAX
+      fail to find cuSPARSE and <b>silently fall back to CPU</b>. It does not error. It just runs about a
+      hundred times slower. We caught it only because the smoke test asserted on
+      <span class="kbd">jax.devices()</span> instead of trusting that a GPU was requested.</p>
+
+    <h3 id="a8">8 · Measuring it honestly</h3>
+    <p>We evaluated on the held-out test split: 64 rollouts, each given 4 real context frames and asked to
+      generate 144 more. FVD compares distributions of video clips, and the useful thing is that it can be
+      decomposed.</p>
+    <figure><img src="figures/chart_fvd.png" alt="FVD decomposition"/>
+      <figcaption>Fig 7 — Splitting the error between the tokenizer and the dynamics model.</figcaption></figure>
+    <p>Of the 32.19 end-to-end score, roughly half comes from the tokenizer's reconstruction loss and half
+      from the dynamics model's prediction error. Neither component is the sole bottleneck — which tells
+      us where effort would go next: higher resolution improves the first term, more dynamics training or
+      scale improves the second.</p>
+    <p>Visually, the rollouts hold together for the full 144 frames. Each level keeps its own art style,
+      geometry stays valid, and nothing dissolves. They do <i>not</i> match the ground truth frame for
+      frame — after 144 autoregressive steps from four real frames they are dreaming <i>a</i> plausible
+      CoinRun level rather than replaying <i>the</i> recorded one. For a world model that is the expected
+      and correct behaviour; the question is whether it stays coherent, and it does.</p>
+    <p>One thing we have <b>not</b> yet measured is controllability. Everything above shows the model
+      simulates CoinRun well. It does not yet prove that pressing right makes the character go right —
+      that requires the action-swap test, and until we run it we are not claiming the control problem is
+      solved. It is the single most important number still outstanding.</p>
+  </div>
+</section>
+
+<section id="results">
+  <h2>Results</h2>
+  <p class="sub">Measured on the held-out test split: 576 clips, 144-frame rollouts from 4 context frames.</p>
+  <table>
+    <tr><th>Tokenizer reconstruction</th><th>PSNR</th></tr>
+    <tr><td>Genie paper (DeepMind)</td><td class="num">35.70</td></tr>
+    <tr><td>GenieRedux (INSAIT, CVPR'25)</td><td class="num">38.25</td></tr>
+    <tr class="win"><td><b>Ours</b></td><td class="num"><b>40.41</b></td></tr>
+  </table>
+  <figure><img src="figures/fig7_fvd.png" alt="FVD decomposition"/>
+    <figcaption>Where the error comes from — roughly half tokenizer, half dynamics.</figcaption></figure>
+  <table>
+    <tr><th>FVD component</th><th>Score</th><th>Meaning</th></tr>
+    <tr><td>original → tokenizer recon</td><td class="num">16.59</td><td>compression ceiling</td></tr>
+    <tr><td>recon → prediction</td><td class="num">23.29</td><td>dynamics only</td></tr>
+    <tr class="win"><td><b>original → prediction</b></td><td class="num"><b>32.19</b></td><td><b>end to end</b></td></tr>
+  </table>
+  <div class="note"><b>Being precise:</b> the Genie paper reports FVD 54.8 on its own curated platformer set.
+    Ours is not a like-for-like comparison — different data, resolution and protocol — so we are not
+    claiming to beat it. We report the decomposition so the numbers can be checked against ours directly.</div>
+</section>
+
+<section id="fixes">
+  <h2>Five things we had to fix</h2>
+  <p class="sub">The reference implementation's CoinRun path does not run end to end as shipped.
+    Each of these cost us real time; all five fixes are in our release.</p>
+  <div class="cards">
+    <div class="card"><div class="n">FIX 01</div><h3>Generator crashes</h3><p>The CoinRun data generator
+      passes a keyword its own writer does not accept.</p></div>
+    <div class="card"><div class="n">FIX 02</div><h3>Writer ≠ reader</h3><p>The writer emits msgpack;
+      the CoinRun reader expects pickle. The write path was lost in a refactor.</p></div>
+    <div class="card"><div class="n">FIX 03</div><h3>No CoinRun tokenization</h3><p>The tokenize script is
+      Minecraft-only. We route around it by encoding on the fly during training.</p></div>
+    <div class="card"><div class="n">FIX 04</div><h3>Hardcoded action space</h3><p>Training asserts the
+      Minecraft action space. The model is generic — the assert was a stale guard.</p></div>
+    <div class="card"><div class="n">FIX 05</div><h3>Missing video backend</h3><p>Evaluation writes MP4 via
+      a plugin that is not in the dependency list, so it fails at the very last step.</p></div>
+  </div>
+</section>
+
+<section id="honest">
+  <h2>What we are <em style="font-family:Fraunces;font-style:italic;color:var(--clay)">not</em> claiming</h2>
+  <div class="note">
+    <p style="margin:0 0 10px"><b>This is not the first open-source world model.</b> Cosmos, Oasis, Muse,
+      DIAMOND, GenieRedux and the Dreamer 4 implementation we built on are all open. We are standing on
+      that work, not replacing it.</p>
+    <p style="margin:0 0 10px"><b>Control is not yet measured.</b> These rollouts use ground-truth actions.
+      They show the model simulates the world well; they do not yet prove that pressing a key steers it.
+      That test is next, and we will publish the number either way.</p>
+    <p style="margin:0"><b>It is 64×64 CoinRun.</b> Sharp for the resolution, but small and stylised.
+      The visual ceiling here is the game's own art, not the model.</p>
+  </div>
+</section>
+
+
+<section id="credits">
+  <h2>Credits &amp; prior work</h2>
+  <p class="sub">This project stands on other people's work. The method, the implementation we built on,
+    the environment, and the tooling are all theirs — our contribution is the CoinRun reproduction,
+    the fixes, and the measurements.</p>
+
+  <div class="note" style="border-left-color:var(--clay)">
+    <p style="margin:0 0 8px"><b>Open Dreamer</b> — the implementation this whole project is built on.</p>
+    <p style="margin:0 0 12px;color:var(--muted);font-size:15px">
+      Diego Marti Monso, Francesco Sacco and Edward Hu
+      (<a href="https://github.com/next-state/open-dreamer">next-state/open-dreamer</a>),
+      with contributions from Dere-Wah. Their JAX/Flax implementation of Dreamer 4 — the configs, the
+      training scripts, the architecture — is what we ran. We reproduced their CoinRun setting; we did
+      not invent it.</p>
+    <pre style="font-size:12px;margin:0">@misc{marti2026opendreamer,
+  title  = {How to Train a Frontier-level World Model},
+  author = {Marti Monso, Diego and Sacco, Francesco and Hu, Edward},
+  month  = {jul}, year = {2026}, publisher = {Zenodo},
+  doi    = {10.5281/zenodo.21475232},
+  url    = {https://next-state.github.io/open-dreamer/}
+}</pre>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="n">METHOD</div><h3>Dreamer 4</h3>
+      <p>Danijar Hafner, Wilson Yan, Timothy Lillicrap.<br/>
+        <a href="https://arxiv.org/abs/2509.24527">arXiv:2509.24527</a> — the causal tokenizer and
+        action-conditioned dynamics we trained.</p></div>
+
+    <div class="card"><div class="n">KEY TECHNIQUE</div><h3>Shortcut models</h3>
+      <p>Kevin Frans, Danijar Hafner, Sergey Levine, Pieter Abbeel. ICLR 2025.<br/>
+        <a href="https://arxiv.org/abs/2410.12557">arXiv:2410.12557</a> — conditioning the flow on step
+        size, which is what makes few-step generation possible.</p></div>
+
+    <div class="card"><div class="n">THE ORIGINAL IDEA</div><h3>Genie</h3>
+      <p>Jake Bruce et al., Google DeepMind. ICML 2024.<br/>
+        <a href="https://arxiv.org/abs/2402.15391">arXiv:2402.15391</a> — generative interactive
+        environments, and the tokenizer PSNR we compare against.</p></div>
+
+    <div class="card"><div class="n">BASELINE</div><h3>GenieRedux</h3>
+      <p>Nedko Savov, Naser Kazemi, Mohammad Mahdi, Danda Pani Paudel, Xi Wang, Luc Van Gool (INSAIT).
+        CVPR 2025.<br/><a href="https://github.com/insait-institute/GenieRedux">insait-institute/GenieRedux</a>
+        — our first build, and the 38.25 PSNR reference.</p></div>
+
+    <div class="card"><div class="n">ENVIRONMENT</div><h3>Procgen / CoinRun</h3>
+      <p>Karl Cobbe and collaborators, OpenAI. MIT licensed.<br/>
+        <a href="https://github.com/openai/procgen">openai/procgen</a> — every frame of our dataset was
+        rendered by it.</p></div>
+
+    <div class="card"><div class="n">INFRASTRUCTURE</div><h3>Tooling</h3>
+      <p><a href="https://modal.com">Modal</a> (GPUs), JAX &amp; Flax, Optax, Grain, ArrayRecord,
+        ott-jax (optimal transport), the Muon optimizer, LPIPS and FVD for evaluation,
+        and <a href="https://remotion.dev">Remotion</a> for these videos.</p></div>
+  </div>
+
+  <div class="note">
+    <p style="margin:0"><b>Licensing — please read before asking us for the code.</b>
+      Open Dreamer currently ships an explicit <em>all rights reserved</em> notice: “No license or
+      permission is granted … without the prior written consent of the copyright holders,” with a note
+      that it is provisional and a formal licence is expected. Out of respect for that, we are
+      <b>not redistributing their code or any weights derived from it</b>. What you see here are our
+      measurements and our write-up. We have asked the authors about licensing and will publish our
+      pipeline once there is a licence that permits it.</p>
+  </div>
+</section>
+<section id="get">
+  <h2>Reproduce it</h2>
+  <p class="sub">The whole pipeline is one file plus configs. On a single GPU, start to finish, for about $150. The commands below are the exact ones we ran — the release itself is gated on Open Dreamer's licence (see credits).</p>
+  <pre>modal run --detach modal_dreamer.py::gen_data          <span style="color:#8B8B83"># 9.6M frames</span>
+modal run --detach modal_dreamer.py::train_tokenizer  <span style="color:#8B8B83"># 10k steps, ~95 min</span>
+modal run --detach modal_dreamer.py::train_dynamics   <span style="color:#8B8B83"># 80k steps</span>
+modal run --detach modal_dreamer.py::eval_only        <span style="color:#8B8B83"># FVD + rollouts</span></pre>
+  <div>
+    <span class="pill">procgen data engine</span><span class="pill">Modal training harness</span>
+    <span class="pill">all 5 fixes</span><span class="pill">tokenizer + dynamics weights</span>
+    <span class="pill">64 rollouts</span><span class="pill">full failure log</span>
+  </div>
+</section>
+</div>
+
+<footer>
+  <div class="wrap">
+    Built on <a href="https://github.com/next-state/open-dreamer">Open Dreamer</a>
+    by Diego Marti Monso, Francesco Sacco and Edward Hu — an implementation of
+    <a href="https://arxiv.org/abs/2509.24527">Dreamer 4</a> (Hafner, Yan &amp; Lillicrap),
+    which builds on <a href="https://arxiv.org/abs/2410.12557">shortcut models</a>
+    (Frans, Hafner, Levine &amp; Abbeel).<br/>
+    Environment: <a href="https://github.com/openai/procgen">OpenAI Procgen</a>.
+    Baseline: <a href="https://github.com/insait-institute/GenieRedux">GenieRedux</a> (INSAIT).
+    Trained on <a href="https://modal.com">Modal</a>.<br/><br/>
+    <span style="opacity:.7">Reproduction, fixes and measurements by Vizuara AI Labs.</span>
+  </div>
+</footer>
+
+<script>
+const CLIPS=["000000","000001","000003","000005","000007","000009","000012","000015","000018","000020",
+             "000024","000029","000033","000036","000041","000047","000050","000055","000059","000062"];
+const g=document.getElementById('gallery');
+CLIPS.forEach((id,i)=>{
+  const d=document.createElement('div'); d.className='cell';
+  d.innerHTML=`<video src="rollouts/dream_${id}.mp4" autoplay loop muted playsinline preload="metadata"></video>
+               <span class="tag">DREAM ${String(i+1).padStart(2,'0')}</span>`;
+  g.appendChild(d);
+});
+</script>
+</body>
+</html>

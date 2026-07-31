@@ -1,0 +1,18 @@
+# Third-party clones — NOT ours to redistribute
+open-dreamer/          # all-rights-reserved upstream; clone it yourself
+GenieRedux/            # MIT, but it's their repo — clone it yourself
+
+# secrets
+.env.local
+.env
+
+# python / venv
+.venv-modal/
+__pycache__/
+*.pyc
+
+# local scratch
+site/
+.DS_Store
+site-dreamer/index.html.bak
+figures_pb/run_*/

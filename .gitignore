@@ -1,6 +1,8 @@
-# Third-party clones — NOT ours to redistribute
-open-dreamer/          # all-rights-reserved upstream; clone it yourself
-GenieRedux/            # MIT, but it's their repo — clone it yourself
+# Third-party clones — NOT ours to redistribute.
+# open-dreamer is all-rights-reserved upstream; GenieRedux is MIT but it's their repo.
+# Clone them yourself.
+open-dreamer/
+GenieRedux/
 
 # secrets
 .env.local
